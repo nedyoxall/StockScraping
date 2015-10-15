@@ -1,9 +1,7 @@
 from bs4 import BeautifulSoup
 import urllib
+import pandas as pd
 
-
-stock_ticker = "AMER.L"
-page_number = "1"
 
 
 def scrape_iii_discussion(stock_ticker, page_number):
@@ -71,34 +69,48 @@ def get_iii_dates(soup):
     dates = get_raw_iii_dates(soup)
 
     from dateutil.parser import parse
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     dates_list = []
     for date in dates:
         d = parse(date.get_text())
         if (d - datetime.now()).days >= 0: # for some reason, parser goes to future date
-            d = datetime(d.year, d.month, d.day-7, d.hour, d.minute)
+            d = d - timedelta(days=7)
             dates_list.append(d)
         else:
             dates_list.append(d)
         
     return dates_list
 
+def initial_scrape(stock_ticker, max_pages):
+	i = 1
+	subjects, dates, comments, votes, tags = [], [], [], [], []
+	while i <= max_pages:
+		soup = scrape_iii_discussion(stock_ticker,str(i))
+		if len(get_iii_subjects(soup)) == 0:
+			print i
+			break    
+		else:	
+			subjects.extend(get_iii_subjects(soup))    
+			dates.extend(get_iii_dates(soup))
+			comments.extend(get_iii_comments(soup))
+			votes.extend(get_iii_votes(soup))
+			tags.extend(get_iii_tags(soup))
+			print i
+			i+=1
 
-soup = scrape_iii_discussion("AMER.L","1")
-subjects = get_iii_subjects(soup)    
-dates = get_iii_dates(soup)
-comments = get_iii_comments(soup)
-votes = get_iii_votes(soup)
-tags = get_iii_tags(soup)
+	dict_for_pd = {'date' : dates,
+			       'tag' : tags,
+			       'subject' : subjects,
+			       'votes' : votes,
+			       'comment' : comments}
 
-print len(subjects)
-print len(dates)
-print len(comments)
-print len(votes)
-print len(tags)
+	iii_df = pd.DataFrame(dict_for_pd)
 
+	print iii_df.head()
+	return iii_df
 
+initial_scrape("AMER.L", 2)
 
 
 
