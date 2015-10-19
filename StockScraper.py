@@ -47,6 +47,8 @@ def get_iii_tags(soup):
             tags_list.append("NO TAG")
     return tags_list
 
+
+
 def get_iii_votes(soup):
     votes = get_raw_iii_votes(soup)
     votes_list = []
@@ -65,6 +67,14 @@ def get_iii_comments(soup):
         comments_list.append(comment.get_text())
     return comments_list
 
+def get_iii_authors(soup):
+    authors = get_raw_iii_authors(soup)    
+    authors_list = []
+    for author in authors:
+        authors_list.append(author.a.get_text()) 
+        # .encode('utf-8') prevents encoding error (after get_text())
+    return authors_list
+
 def get_iii_dates(soup):
     dates = get_raw_iii_dates(soup)
 
@@ -73,7 +83,7 @@ def get_iii_dates(soup):
 
     dates_list = []
     for date in dates:
-        d = parse(date.get_text())
+        d = parse(date.get_text(), dayfirst = True)
         if (d - datetime.now()).days >= 0: # for some reason, parser goes to future date
             d = d - timedelta(days=7)
             dates_list.append(d)
@@ -82,13 +92,14 @@ def get_iii_dates(soup):
         
     return dates_list
 
+
 def initial_scrape(stock_ticker, max_pages):
 	i = 1
-	subjects, dates, comments, votes, tags = [], [], [], [], []
+	subjects, dates, comments, votes, tags, authors = [], [], [], [], [], []
 	while i <= max_pages:
 		soup = scrape_iii_discussion(stock_ticker,str(i))
 		if len(get_iii_subjects(soup)) == 0:
-			print i
+			print "There are only " + str(i-1) + " pages with data."
 			break    
 		else:	
 			subjects.extend(get_iii_subjects(soup))    
@@ -96,23 +107,99 @@ def initial_scrape(stock_ticker, max_pages):
 			comments.extend(get_iii_comments(soup))
 			votes.extend(get_iii_votes(soup))
 			tags.extend(get_iii_tags(soup))
-			print i
+			authors.extend(get_iii_authors(soup))
+			print "Got page " + str(i)
 			i+=1
 
 	dict_for_pd = {'date' : dates,
 			       'tag' : tags,
 			       'subject' : subjects,
 			       'votes' : votes,
+			       'author' : authors,
 			       'comment' : comments}
 
 	iii_df = pd.DataFrame(dict_for_pd)
-
-	print iii_df.head()
+	
+	iii_df.to_pickle("Data/III/" + stock_ticker + ".pkl")
+	
 	return iii_df
 
-initial_scrape("AMER.L", 2)
+
+def update_scrape(stock_ticker, max_new_pages):
+	#[TODO] add in exception if no file exists
+	iii_df_old = pd.read_pickle("Data/III/" + stock_ticker + ".pkl")
+	
+	subjects, dates, comments, votes, tags, authors = [], [], [], [], [], []
+
+	i = 1 # counter for the pages (probably won't go high)
+	j = 0 # counter for the beautiful soup lists
+	found_match = False
+	while i <= max_new_pages:
+		soup = scrape_iii_discussion(stock_ticker, str(i))
+		
+		subjects.extend(get_iii_subjects(soup))    
+		dates.extend(get_iii_dates(soup))
+		comments.extend(get_iii_comments(soup))
+		votes.extend(get_iii_votes(soup))
+		tags.extend(get_iii_tags(soup))
+		authors.extend(get_iii_authors(soup))
+
+		while j  < len(subjects): #[TODO] looking at all subjects, not just specific page
+			if subjects[j] == iii_df_old['subject'].iloc[0] \
+			and authors[j] == iii_df_old['author'].iloc[0] \
+			and dates[j].date() == iii_df_old['date'].iloc[0].date():
+				found_match = True
+				break
+			else:
+				j+=1
+
+		if found_match == True:
+			break
+		else:
+			print "Not found match on page " + str(i) + ", moving to page " + str(i+1)
+			i+=1
 
 
+	if j != 0: # if j is 0, then the first match was the first entry i.e. nothing has changed
+
+		print "Found a match to old data in the " + str(j) + "th entry on the " + str(i) + "th page." 
+
+		dict_to_concat = {'date' : dates[:j],
+				          'tag' : tags[:j],
+				          'subject' : subjects[:j],
+				          'votes' : votes[:j],
+				          'author' : authors[:j],
+				          'comment' : comments[:j]}
+
+		iii_df_new = pd.concat((pd.DataFrame(dict_to_concat), iii_df_old))
+		iii_df_new.reset_index(drop = True, inplace = True)
+		iii_df_new.to_pickle("Data/III/" + stock_ticker + ".pkl")
+		return iii_df_new
+
+	elif j == 0:
+
+		print "No changes need to be made"
+		return iii_df_old
+
+	
+def delete_rows_from_df(stock_ticker, rows_to_delete):
+	df = pd.read_pickle("Data/III/" + stock_ticker + ".pkl")
+	df2 = df.ix[rows_to_delete:]
+	df2.to_pickle("Data/III/" + stock_ticker + ".pkl")
+	return df2
+
+
+
+#[TODO] - add print outs so you know where the function is... i.e. initialising
+
+df = initial_scrape("AMER.L", 2)
+print df.head()
+
+df2 = delete_rows_from_df("AMER.L" , 3)
+print df2.head()
+
+df3 = update_scrape("AMER.L", 5)
+print df3.head()
 
 
 #print soup.prettify()
